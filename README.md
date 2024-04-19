@@ -1,2 +1,2 @@
 # NAV_GEN_ADDITION
-CSV PARESER to JSON OUTPUT
+This python script parses through a csv with specific parameters to output JSON in an existing interpretation JSON file. 
