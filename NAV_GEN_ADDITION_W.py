@@ -2,6 +2,8 @@ import pandas as pd
 import json
 import PySimpleGUI as sg
 import re
+import argparse
+from pathlib import Path
 
 def extract_conditions_from_csv(csv_path):
     df = pd.read_csv(csv_path)
@@ -56,9 +58,13 @@ def extract_conditions_from_csv(csv_path):
 
             for cond_match in context_matches:
                 context, operation, list_values, singular_value = cond_match.groups()
-
+                empty = ''
                 if list_values:  # if it's a list
                     values = [v.strip(" '") for v in list_values.split(',')]
+                    for i, n in enumerate(values):
+                        if n == 'SUB':
+                            values[i] = empty
+
                     condition = {
                         'operation': operation,
                         'args': [
@@ -69,6 +75,17 @@ def extract_conditions_from_csv(csv_path):
                         ]
                     }
                     conditions.append(condition)
+                elif singular_value == "SUB":
+                    condition = {
+                        'operation': operation,
+                        'args': [
+                            {
+                                'context': context,
+                            },
+                            empty
+                        ]
+                    }
+                    conditions.append(condition) 
                 else:
                     condition = {
                         'operation': operation,
@@ -170,39 +187,61 @@ def integrate_conditions_into_json(json_structure, conditions_map):
 
     return json_structure
 
-def main():
+def process_files(csv_file_path, json_file_path):
+    if not csv_file_path or not json_file_path:
+        print("Error: Both CSV and JSON file paths must be provided.")
+        return
+    
+    conditions = extract_conditions_from_csv(csv_file_path)
+    print("Conditions map:", conditions)
+    
+    try:
+        with open(json_file_path, 'r', encoding='utf-8') as jsonfile:
+            data = json.load(jsonfile)
+        updated_data = integrate_conditions_into_json(data, conditions)
+        
+        new_file_path = json_file_path.replace('.json', '_updated.json')
+        with open(new_file_path, 'w', encoding='utf-8') as outfile:
+            json.dump(updated_data, outfile, indent=4)
+        print(f"New JSON file saved as: {new_file_path}")
+    except Exception as e:
+        print(f"Error processing files: {e}")
+
+def run_gui():
     sg.theme('DarkTeal2')
-
-    layout = [[sg.T("")],
-                [sg.Text("Upload the WIREFRAME CSV File: "), sg.Input(key="csv_path"), sg.FileBrowse(key="file_path_browse_csv")],
-                [sg.Text('Upload the JSON version of the INTERPRETATION File: '), sg.Input(key='JSON_path'), sg.FileBrowse(key="file_path_browse_interp")],
-                [sg.T("")],
-                [sg.Button("Submit", bind_return_key=True), sg.Button('Cancel')]]
-
-    window = sg.Window('Main Menu', layout, size=(800, 250))
-
+    layout = [
+        [sg.Text("Upload the WIREFRAME CSV File: "), sg.Input(key="csv_path"), sg.FileBrowse()],
+        [sg.Text("Upload the JSON version of the INTERPRETATION File: "), sg.Input(key='json_path'), sg.FileBrowse()],
+        [sg.Button("Submit"), sg.Button('Cancel')]
+    ]
+    
+    window = sg.Window('Main Menu', layout, size=(800, 200))
     while True:
-        event, values = window.Read()
-        if event == sg.WIN_CLOSED or event == 'Cancel':
+        event, values = window.read()
+        if event in (sg.WINDOW_CLOSED, 'Cancel'):
             break
         elif event == 'Submit':
-            interp_file_path = values['JSON_path']
-            csv_file_path = values['csv_path']
+            process_files(values['csv_path'], values['json_path'])
+            sg.Popup("Successfully updated JSON file!", title="Success")
+            break
+    window.close()
 
-            conditions = extract_conditions_from_csv(csv_file_path)
-            print("Conditions map:", conditions)
+def main():
+    parser = argparse.ArgumentParser(description="Choose between GUI and command line")
+    parser.add_argument("-v", "--pysimple", action="store_true", help="Use the GUI if you have PySimpleGUI")
+    parser.add_argument("-c", "--command", type=str, help="Specify the JSON file path for command line mode")
+    args = parser.parse_args()
 
-            with open(interp_file_path, 'r') as jsonfile:
-                data = json.load(jsonfile)
+    if args.pysimple:
+        run_gui()
 
-            updated_data = integrate_conditions_into_json(data, conditions)
 
-            new_file_path = interp_file_path.replace('.json', '_updated.json')
-            with open(new_file_path, 'w') as outfile:
-                json.dump(updated_data, outfile, indent=4)
-
-            sg.Popup(f"Successfully added conditions to the JSON file! New file saved as {new_file_path}")
-            window.close()
+    elif args.command:
+        json_file_path = args.command
+        csv_file_path = input("Enter the path to the CSV file: ").strip()
+        process_files(csv_file_path, json_file_path)
+    else:
+        print("Error: No mode selected. Use -v for GUI or -c <json_file> for command-line mode.")
 
 if __name__ == '__main__':
     main()
